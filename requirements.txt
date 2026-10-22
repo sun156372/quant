@@ -1,0 +1,9 @@
+# requirements.txt -- locked to the versions that were tested
+requests==2.32.3
+PyYAML==6.0.2
+python-dotenv==1.0.1
+numpy==2.5.3
+pandas==3.0.6
+scipy==1.18.1
+hyperliquid-python-sdk==0.20.0
+eth-account==0.13.4

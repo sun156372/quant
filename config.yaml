@@ -1,0 +1,35 @@
+# config.yaml -- Hyperliquid MVP (M1, v1.2.0-core)
+# Every number here was frozen BEFORE the paper period. Do not tune while live.
+
+exchange: hyperliquid
+symbols: [BTC, ETH, SOL, BNB]      # core-4 only: DEX depth on alts is too thin
+
+# --- data
+interval: "1h"
+history_bars: 400                  # 400 x 1H is enough for every feature window
+
+# --- sizing (20% per trade, 30% hard ceiling)
+position_size_pct: 0.20            # fraction of equity per trade
+max_position_size_pct: 0.30        # never exceed this, whatever the config says
+max_concurrent_trades: 2           # anti-correlation guard: 4 symbols move together
+reserve_cash_pct: 0.10             # always keep 10% untouched
+
+# --- signal (frozen M1)
+entry_prob: 0.50
+hold_bars: 4                       # exit 4 x 1H after entry, time-based
+stop_loss_pct: null                # null = disabled (matches the backtest)
+take_profit_pct: null              # null = disabled (matches the backtest)
+
+# --- costs / execution
+taker_fee: 0.00045                 # Hyperliquid taker, per side
+maker_fee: 0.00015
+slippage_pct: 0.0002               # limit offset for the IOC order
+retry_attempts: 3
+retry_backoff_sec: 2.0
+
+# --- runtime
+dry_run: true                      # ALWAYS start true; flip only after a week
+state_file: "state.json"
+model_file: "model/mvp_logit.pkl"
+log_file: "run_live.log"
+poll_seconds: 60                   # check every minute, act once per hour
