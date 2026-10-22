@@ -1,0 +1,7 @@
+2026-10-22 22:41:38 INFO    run_live | model loaded from model/mvp_logit.pkl  (Logit)
+2026-10-22 22:41:38 INFO    run_live | start | dry_run=True | symbols=BTC,ETH,SOL,BNB | open=0 | equity=1000.00 | log=run_live.log
+2026-10-22 22:41:40 INFO    run_live | BAR BTC  close=81849        prob=0.2313 vol24=28%  
+2026-10-22 22:41:42 INFO    run_live | BAR ETH  close=2410.7       prob=0.2457 vol24=35%  
+2026-10-22 22:41:44 INFO    run_live | BAR SOL  close=104.68       prob=0.2490 vol24=42%  
+2026-10-22 22:41:45 INFO    run_live | BAR BNB  close=733.39       prob=0.2104 vol24=25%  
+2026-10-22 22:41:45 INFO    run_live | HB  2026-10-22 14:41:45 | eq=1000.00 pos=0 | BTC=0.231  ETH=0.246  SOL=0.249  BNB=0.210

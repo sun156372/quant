@@ -1,17 +1,21 @@
-# data_fetcher.py -- Hyperliquid public info API (no auth needed).
-"""Candles + mid prices. Every call retries with backoff; failures raise, they
-are never silently swallowed (silent data gaps are how backtests lie)."""
+# data_fetcher.py -- Hyperliquid public info API (no auth, no third-party deps).
+"""Stdlib only (urllib) so the server needs nothing beyond numpy/pandas/scipy.
+
+Every call retries with backoff; failures raise, they are never silently
+swallowed -- silent data gaps are how backtests lie.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import time
+import urllib.request
 
-import numpy as np
 import pandas as pd
-import requests
 
 INFO_URL = "https://api.hyperliquid.xyz/info"
+UA = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
 log = logging.getLogger(__name__)
 
 
@@ -20,21 +24,22 @@ class HyperliquidData:
         self.retries = retries
         self.backoff = backoff
         self.timeout = timeout
-        self.session = requests.Session()
 
-    def _post(self, payload: dict) -> dict | list:
+    def _post(self, payload: dict):
         last = None
+        body = json.dumps(payload).encode("utf-8")
         for attempt in range(1, self.retries + 1):
             try:
-                r = self.session.post(INFO_URL, json=payload, timeout=self.timeout)
-                r.raise_for_status()
-                return r.json()
+                req = urllib.request.Request(INFO_URL, data=body, headers=UA)
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    return json.loads(r.read().decode("utf-8"))
             except Exception as exc:                      # network / 5xx / timeout
                 last = exc
                 log.warning("info API attempt %d/%d failed: %s",
                             attempt, self.retries, exc)
                 time.sleep(self.backoff * attempt)
-        raise RuntimeError(f"Hyperliquid info API failed after {self.retries} tries") from last
+        raise RuntimeError(
+            f"Hyperliquid info API failed after {self.retries} tries") from last
 
     # ------------------------------------------------------------------ candles
     def candles(self, coin: str, interval: str = "1h", bars: int = 400) -> pd.DataFrame:
@@ -52,7 +57,7 @@ class HyperliquidData:
                      ("c", "close"), ("v", "volume")):
             df[b] = df[a].astype("float64")
         df = df.sort_values("open_time").drop_duplicates("open_time")
-        # Hyperliquid has no taker-buy split on this endpoint; neutralise it
+        # no taker-buy split on this endpoint; neutralise it (unused by FEATURES)
         df["taker_buy_base"] = df["volume"] / 2.0
         df["trades"] = 0
         return df[["open_time", "open", "high", "low", "close", "volume",

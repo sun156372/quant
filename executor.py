@@ -13,11 +13,25 @@ import logging
 import os
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
-from dotenv import load_dotenv
-
-load_dotenv()                      # reads .env in the working directory
 log = logging.getLogger(__name__)
+
+
+def load_env(path: str = ".env") -> None:
+    """Minimal .env reader (stdlib only). Never overrides an existing variable."""
+    p = Path(path)
+    if not p.exists():
+        return
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
+
+load_env()                         # reads .env in the working directory
 
 
 @dataclass
@@ -114,7 +128,12 @@ class HyperliquidExecutor:
     # ------------------------------------------------------------------ account
     def equity(self) -> float:
         if self.dry_run:
-            return float(os.getenv("DRY_EQUITY", "1000"))
+            raw = (os.getenv("DRY_EQUITY") or "1000").strip()
+            try:
+                return float(raw)
+            except ValueError:
+                log.warning("bad DRY_EQUITY=%r, falling back to 1000", raw)
+                return 1000.0
         from hyperliquid.info import Info
         from hyperliquid.utils import constants
 
