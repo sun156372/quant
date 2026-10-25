@@ -42,8 +42,9 @@ def latest_signal(df: pd.DataFrame, model, entry_prob: float) -> dict | None:
         "open_time": int(last["open_time"]),
         "close": float(last["close"]),
         "prob": p,
-        "signal": bool(p >= entry_prob),
+        "signal": bool(p >= entry_prob),        # LONG ONLY. no short branch.
         "vol_24": float(last["vol_24"]),
+        "features": {k: float(last[k]) for k in FEATURES},   # <-- NEW
     }
 
 
