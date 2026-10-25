@@ -109,16 +109,31 @@ def run_once(cfg: dict, data: HyperliquidData, ex: HyperliquidExecutor,
 
         hb.append(f"{sym}={sig['prob']:.3f}")
         new_bar = state["last_bar"].get(sym) != sig["open_time"]
+        f = sig["features"]
         if new_bar:
             log.info("BAR %-4s close=%-12.6g prob=%.4f vol24=%.0f%%  %s",
                      sym, sig["close"], sig["prob"], sig["vol_24"] * 100,
                      "SIGNAL" if sig["signal"] else "")
+            log.info("     feat %-4s ret1=%+.4f%%  vol24=%6.1f%%  rsi=%5.1f  "
+                     "volz=%+.2f  trend=%+.4f%%",
+                     sym, f["ret_1"] * 100, f["vol_24"] * 100, f["rsi_14"],
+                     f["vol_z"], f["trend"] * 100)
             state["last_bar"][sym] = sig["open_time"]
             save_state(cfg["state_file"], state)
-        if not sig["signal"] or not new_bar:
+
+        # ---- explicit reject reasons: silence must always be explainable
+        if not sig["signal"]:
+            if new_bar:
+                log.info("[Reject] %-4s P(up)=%.4f < %.2f  (LONG-ONLY: no short "
+                         "leg exists; shorting at P<=0.20 tested +0.03%%/trade)",
+                         sym, sig["prob"], cfg["entry_prob"])
+            continue
+        if not new_bar:
             continue
         notional = size_for(sym, cfg, state, equity)
         if notional <= 0:
+            log.info("[Reject] %-4s signal ok but size=0 (concurrency cap %d "
+                     "or cash reserve)", sym, cfg["max_concurrent_trades"])
             continue
         size = notional / sig["close"]
         fill = ex.market_order(sym, "buy", size, sig["close"], cfg["slippage_pct"])
