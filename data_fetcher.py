@@ -1,8 +1,9 @@
-# data_fetcher.py -- Hyperliquid public info API (no auth, no third-party deps).
+# data_fetcher.py -- Binance public market data API (no auth, no third-party deps).
 """Stdlib only (urllib) so the server needs nothing beyond numpy/pandas/scipy.
 
-Every call retries with backoff; failures raise, they are never silently
-swallowed -- silent data gaps are how backtests lie.
+This module keeps the same high-level adapter API as the original Hyperliquid
+implementation so the trading loop can swap to Binance without touching the rest
+of the strategy code.
 """
 
 from __future__ import annotations
@@ -10,54 +11,80 @@ from __future__ import annotations
 import json
 import logging
 import time
+import urllib.parse
 import urllib.request
 
 import pandas as pd
 
-INFO_URL = "https://api.hyperliquid.xyz/info"
+BASE_URL = "https://api.binance.com"
 UA = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
 log = logging.getLogger(__name__)
 
 
-class HyperliquidData:
+class BinanceData:
     def __init__(self, retries: int = 3, backoff: float = 2.0, timeout: int = 15):
         self.retries = retries
         self.backoff = backoff
         self.timeout = timeout
 
-    def _post(self, payload: dict):
+    def _get(self, path: str, params: dict | None = None):
         last = None
-        body = json.dumps(payload).encode("utf-8")
+        url = BASE_URL + path
+        if params:
+            url = f"{url}?{urllib.parse.urlencode(params)}"
         for attempt in range(1, self.retries + 1):
             try:
-                req = urllib.request.Request(INFO_URL, data=body, headers=UA)
+                req = urllib.request.Request(url, headers=UA)
                 with urllib.request.urlopen(req, timeout=self.timeout) as r:
                     return json.loads(r.read().decode("utf-8"))
-            except Exception as exc:                      # network / 5xx / timeout
+            except Exception as exc:  # network / 5xx / timeout
                 last = exc
-                log.warning("info API attempt %d/%d failed: %s",
+                log.warning("Binance API attempt %d/%d failed: %s",
                             attempt, self.retries, exc)
                 time.sleep(self.backoff * attempt)
         raise RuntimeError(
-            f"Hyperliquid info API failed after {self.retries} tries") from last
+            f"Binance public API failed after {self.retries} tries") from last
+
+    @staticmethod
+    def _normalize_symbol(coin: str) -> str:
+        symbol = str(coin).strip().upper().replace(" ", "")
+        if symbol.endswith("USD") and not symbol.endswith("USDT"):
+            symbol = symbol[:-3] + "USDT"
+        if not symbol.endswith("USDT"):
+            symbol = f"{symbol}USDT"
+        return symbol
 
     # ------------------------------------------------------------------ candles
     def candles(self, coin: str, interval: str = "1h", bars: int = 400) -> pd.DataFrame:
-        now = int(time.time() * 1000)
-        ms_per_bar = {"1h": 3_600_000, "4h": 14_400_000}[interval]
-        start = now - (bars + 5) * ms_per_bar
-        raw = self._post({"type": "candleSnapshot",
-                          "req": {"coin": coin, "interval": interval,
-                                  "startTime": start, "endTime": now}})
+        symbol = self._normalize_symbol(coin)
+        interval_key = {"1h": "1h", "4h": "4h"}.get(interval)
+        if interval_key is None:
+            raise ValueError(f"unsupported interval: {interval!r}")
+        raw = self._get(
+            "/api/v3/klines",
+            {"symbol": symbol, "interval": interval_key, "limit": bars},
+        )
         if not raw:
-            raise RuntimeError(f"empty candle response for {coin}")
-        df = pd.DataFrame(raw)
-        df["open_time"] = df["t"].astype("int64")
-        for a, b in (("o", "open"), ("h", "high"), ("l", "low"),
-                     ("c", "close"), ("v", "volume")):
-            df[b] = df[a].astype("float64")
+            raise RuntimeError(f"empty candle response for {symbol}")
+
+        rows = []
+        for item in raw:
+            if len(item) < 6:
+                continue
+            rows.append({
+                "open_time": int(item[0]),
+                "open": float(item[1]),
+                "high": float(item[2]),
+                "low": float(item[3]),
+                "close": float(item[4]),
+                "volume": float(item[5]),
+            })
+
+        if not rows:
+            raise RuntimeError(f"no valid candle rows for {symbol}")
+
+        df = pd.DataFrame(rows)
         df = df.sort_values("open_time").drop_duplicates("open_time")
-        # no taker-buy split on this endpoint; neutralise it (unused by FEATURES)
         df["taker_buy_base"] = df["volume"] / 2.0
         df["trades"] = 0
         return df[["open_time", "open", "high", "low", "close", "volume",
@@ -65,11 +92,22 @@ class HyperliquidData:
 
     # ------------------------------------------------------------------ mid px
     def mids(self) -> dict[str, float]:
-        raw = self._post({"type": "allMids"})
-        return {k: float(v) for k, v in raw.items()}
+        raw = self._get("/api/v3/ticker/price")
+        return {str(item["symbol"]): float(item["price"]) for item in raw
+                if "symbol" in item and "price" in item}
 
     def spot(self, coin: str) -> float:
-        m = self.mids()
-        if coin not in m:
-            raise KeyError(f"{coin} not in allMids")
-        return m[coin]
+        symbol = self._normalize_symbol(coin)
+        raw = self._get("/api/v3/ticker/price", {"symbol": symbol})
+        if isinstance(raw, dict):
+            price = raw.get("price")
+        else:
+            price = None
+        if price is None:
+            raise KeyError(f"{symbol} not in ticker/price response")
+        return float(price)
+
+
+# Backward-compatible alias so the rest of the project can keep importing the
+# original class name while using Binance as the underlying data source.
+HyperliquidData = BinanceData
