@@ -1,9 +1,6 @@
-# data_fetcher.py -- Binance public market data API (no auth, no third-party deps).
-"""Stdlib only (urllib) so the server needs nothing beyond numpy/pandas/scipy.
-
-This module keeps the same high-level adapter API as the original Hyperliquid
-implementation so the trading loop can swap to Binance without touching the rest
-of the strategy code.
+# data_fetcher.py -- Binance public market data API.
+"""Binance public data adapter with the same high-level API as the previous
+Hyperliquid version so the strategy loop can remain unchanged.
 """
 
 from __future__ import annotations
@@ -37,7 +34,7 @@ class BinanceData:
                 req = urllib.request.Request(url, headers=UA)
                 with urllib.request.urlopen(req, timeout=self.timeout) as r:
                     return json.loads(r.read().decode("utf-8"))
-            except Exception as exc:  # network / 5xx / timeout
+            except Exception as exc:
                 last = exc
                 log.warning("Binance API attempt %d/%d failed: %s",
                             attempt, self.retries, exc)
@@ -54,7 +51,6 @@ class BinanceData:
             symbol = f"{symbol}USDT"
         return symbol
 
-    # ------------------------------------------------------------------ candles
     def candles(self, coin: str, interval: str = "1h", bars: int = 400) -> pd.DataFrame:
         symbol = self._normalize_symbol(coin)
         interval_key = {"1h": "1h", "4h": "4h"}.get(interval)
@@ -90,7 +86,6 @@ class BinanceData:
         return df[["open_time", "open", "high", "low", "close", "volume",
                    "taker_buy_base", "trades"]].reset_index(drop=True)
 
-    # ------------------------------------------------------------------ mid px
     def mids(self) -> dict[str, float]:
         raw = self._get("/api/v3/ticker/price")
         return {str(item["symbol"]): float(item["price"]) for item in raw
@@ -108,6 +103,5 @@ class BinanceData:
         return float(price)
 
 
-# Backward-compatible alias so the rest of the project can keep importing the
-# original class name while using Binance as the underlying data source.
+# Backward-compatible aliases for the rest of the program.
 HyperliquidData = BinanceData
